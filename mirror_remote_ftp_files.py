@@ -11,8 +11,9 @@ usage: ftpmirror [-v] [-q] [-i] [-m] [-n] [-r] [-s pat]
 -m: macintosh server (NCSA telnet 2.4) (implies -n -s '*.o')
 -n: don't log in
 -r: remove local files/directories no longer pertinent
--l username [-p passwd [-a account]]: login info (default .netrc or anonymous)
--s pat: skip files matching pattern
+-l: username [-p passwd [-a account]]: login info (default .netrc or anonymous)
+-s: pat: skip files matching pattern
+-d: Delete mirrored files once all copying is complete
 hostname: remote host w/ optional port separated by ':'
 remotedir: remote directory (default initial)
 localdir: local directory (default current)
@@ -41,6 +42,7 @@ mac = 0
 rmok = 0
 nologin = 0
 skippats = ['.', '..', '.mirrorinfo']
+must_delete = False
 
 # Main program: parse command line and start processing
 def main():
@@ -52,6 +54,7 @@ def main():
     login = ''
     passwd = ''
     account = ''
+    must_delete = False
     if not args: usage('hostname missing')
     host = args[0]
     port = 0
@@ -75,6 +78,7 @@ def main():
         if o == '-n': nologin = 1
         if o == '-r': rmok = 1
         if o == '-s': skippats.append(a)
+        if o == '-d': must_delete = True
     remotedir = ''
     localdir = ''
     if args[1:]:
@@ -90,7 +94,9 @@ def main():
     if not nologin:
         if verbose:
             print 'Logging in as %r...' % (login or 'anonymous')
+        #f.auth()
         f.login(login, passwd, account)
+        #f.prot_p()
     if verbose: print 'OK.'
     pwd = f.pwd()
     if verbose > 1: print 'PWD =', repr(pwd)
@@ -101,82 +107,85 @@ def main():
         pwd = f.pwd()
         if verbose > 1: print 'PWD =', repr(pwd)
     #
-	mirrorsubdir(f, localdir)
-	# src_dirs, src_files = locallist(localdir)
-	# print src_dirs
-	# print src_files
-	# for dir in src_dirs:
-		# removeremotedir(f,dir)
-	# for file in src_files:
-		# removeremotefile(f,file)
-	recursive_remove(f,localdir)
-	
+    mirrorsubdir(f, localdir)
+    # src_dirs, src_files = locallist(localdir)
+    # print src_dirs
+    # print src_files
+    # for dir in src_dirs:
+        # removeremotedir(f,dir)
+    # for file in src_files:
+        # removeremotefile(f,file)
+    recursive_remove(f,localdir)
+    
 def recursive_remove(f,localdir):
-	src_dirs, src_files = locallist(localdir)
-	print "Now in",f.pwd()
-	for dir in src_dirs:
-		try:
-			f.cwd(dir)		
-			recursive_remove(f,os.path.join(localdir,dir))
-			f.cwd("..")
-		except ftplib.error_perm, msg:
-			print msg
+    src_dirs, src_files = locallist(localdir)
+    print "Now in",f.pwd()
+    for dir in src_dirs:
+        try:
+            f.cwd(dir)        
+            recursive_remove(f,os.path.join(localdir,dir))
+            f.cwd("..")
+        except ftplib.error_perm, msg:
+            print msg
 
-	#print f.pwd()
-	remote_dirs, remote_files = remotelist(f, ".")
-	#print remote_files	
-	for file in src_files:
-		local_file_size = os.path.getsize(os.path.join(localdir,file))
-		if file not in remote_files:
-			print "Remote file",file,"not found, skipping delete..."
-			continue
-		if remote_files[file]["size"] != local_file_size:
-			print file,"size differs(local=",local_file_size,",remote=",remote_files[file]["size"],"), skipping delete..."
-			continue
+    #print f.pwd()
+    remote_dirs, remote_files = remotelist(f, ".")
+    #print remote_files    
+    for file in src_files:
+        local_file_size = os.path.getsize(os.path.join(localdir,file))
+        if file not in remote_files:
+            print "Remote file",file,"not found, skipping delete..."
+            continue
+        if remote_files[file]["size"] != local_file_size:
+            print file,"size differs(local=",local_file_size,",remote=",remote_files[file]["size"],"), skipping delete..."
+            continue
 
-		#If all good, delete the remote file
-		removeremotefile(f,file, local_file_size)
-		
-			
-	
+        #If all good, delete the remote file
+        removeremotefile(f,file, local_file_size)
+        
+            
+    
 def removeremotefile(ftp,path, local_file_size):
         #log('--> Remove file %s' % path, 2)
-		#if local_file_size:
-		#print ftp.pwd()
-		# dirs, files = remotelist(ftp, ".")
-		# print files
-		# if (path in files and files[path]["size"] == local_file_size):
-			# print "remote size", files[path]["size"]
-			# print "local size", local_file_size		
-		print "Would have removed file:", path
-		#ftp.delete(path)
+        #if local_file_size:
+        #print ftp.pwd()
+        # dirs, files = remotelist(ftp, ".")
+        # print files
+        # if (path in files and files[path]["size"] == local_file_size):
+            # print "remote size", files[path]["size"]
+            # print "local size", local_file_size        
+        if must_delete:
+            ftp.delete(path)
+        else:
+            print "Would have removed file:", path
+        #
         #globals['status']['files_removed'] += 1
     
 
 def locallist(dir, skip_mtime=False):
-	dirs = []
-	files = {}
-	for name in os.listdir(dir):
-		path = os.path.join(dir, name)
-		if os.path.isdir(path):
-			dirs.append(name)
-		else:
-			if skip_mtime: mtime = 0
-			else: mtime = os.path.getmtime(path)
-			files[name] = {
-				'size': os.path.getsize(path),
-				'mtime': mtime,
-				}
-	return (dirs, files)
-	
+    dirs = []
+    files = {}
+    for name in os.listdir(dir):
+        path = os.path.join(dir, name)
+        if os.path.isdir(path):
+            dirs.append(name)
+        else:
+            if skip_mtime: mtime = 0
+            else: mtime = os.path.getmtime(path)
+            files[name] = {
+                'size': os.path.getsize(path),
+                'mtime': mtime,
+                }
+    return (dirs, files)
+    
 def remotelist(ftp, dir, skip_mtime=False):
         month_to_int = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
             'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9,
             'Oct': 10, 'Nov': 11, 'Dec': 12}
         try:
-			buffer = []
-			ftp.dir('-a ', dir, buffer.append)
-			print buffer
+            buffer = []
+            ftp.dir('-a ', dir, buffer.append)
+            print buffer
         except ftplib.error_temp:
             buffer = []
             ftp.dir(dir, buffer.append)
@@ -208,8 +217,8 @@ def remotelist(ftp, dir, skip_mtime=False):
                     'size': size,
                     'mtime': mtime,
                     }
-        return (dirs, files)	
-		
+        return (dirs, files)    
+        
 # Core logic: mirror one subdirectory (recursively)
 def mirrorsubdir(f, localdir):
     pwd = f.pwd()
@@ -233,6 +242,18 @@ def mirrorsubdir(f, localdir):
     subdirs = []
     listing = []
     if verbose: print 'Listing remote directory %r...' % (pwd,)
+    ####NUUT
+    remote_dirs, remote_files = remotelist(f, ".")
+    #print remote_files    
+    # for file in src_files:
+        # local_file_size = os.path.getsize(os.path.join(localdir,file))
+        # if file not in remote_files:
+            # print "Remote file",file,"not found, skipping delete..."
+            # continue
+        # if remote_files[file]["size"] != local_file_size:
+            # print file,"size differs(local=",local_file_size,",remote=",remote_files[file]["size"],"), skipping delete..."
+            # continue
+################################
     f.retrlines('LIST', listing.append)
     filesfound = []
     for line in listing:
@@ -278,10 +299,24 @@ def mirrorsubdir(f, localdir):
             subdirs.append(filename)
             continue
         filesfound.append(filename)
+        print "XXXXXXXXXXXXXXXXXXXXXXXXHIERXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+        print infostuff
+        if info.has_key(filename): print info[filename]
         if info.has_key(filename) and info[filename] == infostuff:
             if verbose > 1:
                 print 'Already have this version of',repr(filename)
             continue
+
+        #
+        local_file_name = os.path.join(localdir,filename)
+        if os.path.exists(local_file_name):
+            local_file_size = os.path.getsize(local_file_name)
+            if remote_files[filename]["size"] == local_file_size:
+                print filename,"Already have local copy with same size (local=",local_file_size,",remote=",remote_files[filename]["size"],"), skipping transfer..."
+                continue
+            
+            
+            
         fullname = os.path.join(localdir, filename)
         tempname = os.path.join(localdir, '@'+filename)
         if interactive:
@@ -454,7 +489,7 @@ class LoggingFile:
         self.bytes = self.bytes + len(data)
         hashes = int(self.bytes) / self.blocksize
         while hashes > self.hashes:
-            self.outfp.write('#')
+            self.outfp.write('\r(%d/%d)' % (self.blocksize * self.hashes, self.bytes))
             self.outfp.flush()
             self.hashes = self.hashes + 1
         self.fp.write(data)
