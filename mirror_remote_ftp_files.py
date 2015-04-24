@@ -46,15 +46,15 @@ must_delete = False
 
 # Main program: parse command line and start processing
 def main():
-    global verbose, interactive, mac, rmok, nologin
+    global verbose, interactive, mac, rmok, nologin, must_delete
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'a:bil:mnp:qrs:v')
+        opts, args = getopt.getopt(sys.argv[1:], 'a:bdil:mnp:qrs:v')
     except getopt.error, msg:
         usage(msg)
     login = ''
     passwd = ''
     account = ''
-    must_delete = False
+    #must_delete = False
     if not args: usage('hostname missing')
     host = args[0]
     port = 0
@@ -79,6 +79,7 @@ def main():
         if o == '-r': rmok = 1
         if o == '-s': skippats.append(a)
         if o == '-d': must_delete = True
+    
     remotedir = ''
     localdir = ''
     if args[1:]:
@@ -153,8 +154,9 @@ def removeremotefile(ftp,path, local_file_size):
         # print files
         # if (path in files and files[path]["size"] == local_file_size):
             # print "remote size", files[path]["size"]
-            # print "local size", local_file_size        
-        if must_delete:
+            # print "local size", local_file_size                        
+        if must_delete==True:
+            print 'Deleting file', path
             ftp.delete(path)
         else:
             print "Would have removed file:", path
@@ -346,7 +348,7 @@ def mirrorsubdir(f, localdir):
             if verbose:
                 print 'Retrieving %r from %r as %r...' % (filename, pwd, fullname)
             if verbose:
-                fp1 = LoggingFile(fp, 1024, sys.stdout)
+                fp1 = LoggingFile(fp, 1024, sys.stdout, remote_files[filename]["size"])
             else:
                 fp1 = fp
             t0 = time.time()
@@ -479,17 +481,19 @@ def remove(fullname):
 
 # Wrapper around a file for writing to write a hash sign every block.
 class LoggingFile:
-    def __init__(self, fp, blocksize, outfp):
+    def __init__(self, fp, blocksize, outfp, final_file_size):
         self.fp = fp
         self.bytes = 0
         self.hashes = 0
         self.blocksize = blocksize
         self.outfp = outfp
+        self.final_file_size = final_file_size
+        
     def write(self, data):
         self.bytes = self.bytes + len(data)
         hashes = int(self.bytes) / self.blocksize
         while hashes > self.hashes:
-            self.outfp.write('\r(%d/%d)' % (self.blocksize * self.hashes, self.bytes))
+            self.outfp.write('\r(%d/%d)' % (self.bytes,self.final_file_size))
             self.outfp.flush()
             self.hashes = self.hashes + 1
         self.fp.write(data)
